@@ -11,8 +11,6 @@ CSV
 
 1) Identity & Access (MFA% + stale accounts)
 
-Run:
-
 cd ~/demo
 mfa_pct=$(awk -F, 'NR>1 {if (tolower($2) ~ /^(true|yes|1)$/) e++ ; t++} END {printf "%.1f", (t? (e/t)*100 : 0)}' users.csv)
 cutoff=$(date -d 'now -90 days' +%s)
@@ -21,8 +19,6 @@ echo "Identity KPIs -> MFA %: $mfa_pct ; Stale accounts: $(wc -l < ia_findings.c
 
 
 2) Endpoints (drift → remediate → compliant log)
-
-Run (safe simulation):
 
 cd ~/demo
 log="compliance.csv"; [ -f "$log" ] || echo "timestamp,control,drift,remediated,compliant" > "$log"
@@ -37,8 +33,6 @@ tail -n 1 "$log"
 
 3) DR (restore drill: RPO/RTO + hash)
 
-Run:
-
 cd ~/demo
 echo "Lab Results – Integrity OK" > working/report.txt
 cp -f working/report.txt snapshots/report.txt
@@ -52,6 +46,7 @@ sha256sum working/report.txt | awk '{print "SHA-256:   "$1}'
 
 
 Control Card report
+
 cd ~/demo
 
 
@@ -87,3 +82,4 @@ EOF
 
 echo "Packed ${bundle}"
 ls -1 "$bundle"
+
