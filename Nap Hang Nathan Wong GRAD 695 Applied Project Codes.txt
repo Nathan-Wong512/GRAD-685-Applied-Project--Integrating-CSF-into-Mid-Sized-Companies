@@ -1,0 +1,89 @@
+List of three users:
+
+mkdir -p ~/demo && cd ~/demo
+cat > users.csv <<'CSV'
+UPN,MFAEnabled,LastLogin
+alice@example.com,TRUE,2025-10-22
+bob@example.com,FALSE,2024-12-01
+carol@example.com,TRUE,2025-03-01
+CSV
+
+
+1) Identity & Access (MFA% + stale accounts)
+
+Run:
+
+cd ~/demo
+mfa_pct=$(awk -F, 'NR>1 {if (tolower($2) ~ /^(true|yes|1)$/) e++ ; t++} END {printf "%.1f", (t? (e/t)*100 : 0)}' users.csv)
+cutoff=$(date -d 'now -90 days' +%s)
+awk -F, -v c="$cutoff" 'NR==1{next}{cmd="date -d \""$3"\" +%s"; cmd|getline ts; close(cmd); if(ts<c) print}' users.csv > ia_findings.csv
+echo "Identity KPIs -> MFA %: $mfa_pct ; Stale accounts: $(wc -l < ia_findings.csv)"
+
+
+2) Endpoints (drift → remediate → compliant log)
+
+Run (safe simulation):
+
+cd ~/demo
+log="compliance.csv"; [ -f "$log" ] || echo "timestamp,control,drift,remediated,compliant" > "$log"
+echo "FW=on" > policy.conf
+sed -i 's/FW=on/FW=off/' policy.conf           
+ts=$(date -Iseconds)
+sed -i 's/FW=off/FW=on/' policy.conf           
+compliant=$(grep -q 'FW=on' policy.conf && echo True || echo False)
+echo "$ts,FW.Domain,True,True,$compliant" >> "$log"
+tail -n 1 "$log"
+
+
+3) DR (restore drill: RPO/RTO + hash)
+
+Run:
+
+cd ~/demo
+echo "Lab Results – Integrity OK" > working/report.txt
+cp -f working/report.txt snapshots/report.txt
+snap_ts=$(stat -c %Y snapshots/report.txt)
+echo "*** CORRUPTED ***" > working/report.txt
+start_ns=$(date +%s%N); cp -f snapshots/report.txt working/report.txt; end_ns=$(date +%s%N)
+now_ts=$(date +%s)
+echo "RPO (min): $(( (now_ts - snap_ts) / 60 ))"
+echo "RTO (ms):  $(( (end_ns - start_ns) / 1000000 ))"
+sha256sum working/report.txt | awk '{print "SHA-256:   "$1}'
+
+
+Control Card report
+cd ~/demo
+
+
+ctrl="PR.AC-1"                          
+month=$(date +%Y-%m)                    
+bundle="Evidence/${ctrl}_${month}"
+
+
+[ -f users.csv ] || { echo "users.csv missing"; exit 1; }
+[ -f ia_findings.csv ] || { echo "ia_findings.csv missing"; exit 1; }
+
+
+mfa_pct=$(awk -F, 'NR>1{if(tolower($2)~/^(true|yes|1)$/) e++; t++} END{printf "%.1f", t? (e/t)*100:0}' users.csv)
+stale_cnt=$(( $(wc -l < ia_findings.csv) - 1 ))    # minus header
+
+mkdir -p "$bundle"
+
+cp -f users.csv        "$bundle/mfa_users.csv"
+cp -f ia_findings.csv  "$bundle/ia_findings.csv"
+
+
+cat > "$bundle/control_card.txt" <<EOF
+Control: ${ctrl} – Access Control (MFA/Stale)
+Owner: IT Ops – Identity
+Period: ${month}
+Targets: MFA ≥ 95%; Stale accounts ≤ 2
+Results (this period): MFA ${mfa_pct}%; Stale accounts ${stale_cnt}
+Notes: Exceptions listed in ia_findings.csv
+EOF
+
+
+( cd "$bundle" && sha256sum * > SHA256.txt )
+
+echo "Packed ${bundle}"
+ls -1 "$bundle"
